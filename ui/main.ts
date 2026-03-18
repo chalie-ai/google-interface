@@ -592,7 +592,7 @@ export function renderMainView(
     }
     var html = '<div class="d-flex flex-column gap-3">';
     emails.forEach(function (email) {
-      var unreadClass = email.unread ? " email-unread" : "";
+      var unreadClass = email.isUnread ? " email-unread" : "";
       var badgesHtml = "";
       if (Array.isArray(email.labels)) {
         email.labels.forEach(function (label) {
@@ -610,7 +610,7 @@ export function renderMainView(
         '<div class="d-flex justify-content-between align-items-start">' +
         '<h6 class="card-title mb-1">' +
         escapeHtml(email.subject || "(no subject)") +
-        (email.unread
+        (email.isUnread
           ? ' <span class="badge bg-primary ms-1" style="font-size:.65rem">UNREAD</span>'
           : "") +
         "</h6>" +

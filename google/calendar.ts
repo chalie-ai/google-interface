@@ -22,7 +22,7 @@
  * @module
  */
 
-import { googleFetch } from "./api-utils.ts";
+import { AuthError, GoogleApiError, RateLimitError, googleFetch } from "./api-utils.ts";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -432,15 +432,12 @@ export async function deleteEvent(
   });
 
   if (response.status === 401) {
-    const { AuthError } = await import("./api-utils.ts");
     throw new AuthError();
   }
   if (response.status === 429) {
-    const { RateLimitError } = await import("./api-utils.ts");
     throw new RateLimitError();
   }
   if (!response.ok) {
-    const { GoogleApiError } = await import("./api-utils.ts");
     const body = await response.text();
     throw new GoogleApiError(`Google API error ${response.status}: ${body}`, response.status);
   }
