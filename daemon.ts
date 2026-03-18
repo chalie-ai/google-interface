@@ -875,17 +875,31 @@ async function renderInterface(): Promise<string> {
 // ---------------------------------------------------------------------------
 
 /**
- * OAuth 2.0 scopes this daemon requests from Google.
+ * Chalie SDK scope declarations for this daemon.
  *
- * Matches the scopes defined in `google/auth.ts`.  Declared here for the
- * `createDaemon` registration so Chalie can display them to the user.
+ * These tell the SDK (and Chalie's ACT loop) which signal topics this daemon
+ * may emit, which message topics it may send to the user's chat, and which
+ * context keys it needs to read.
+ *
+ * Note: The Google OAuth 2.0 URL scopes (gmail.modify, calendar, etc.) are a
+ * separate concern and live in `google/auth.ts` where they are used to build
+ * the consent URL.  They must not be placed here.
  */
-const GOOGLE_SCOPES: string[] = [
-  "https://www.googleapis.com/auth/gmail.modify",
-  "https://www.googleapis.com/auth/gmail.compose",
-  "https://www.googleapis.com/auth/calendar",
-  "https://www.googleapis.com/auth/userinfo.email",
-];
+const SCOPES = {
+  signals: {
+    email_received:
+      "Notify Chalie when new emails arrive (sender, subject, folder)",
+    calendar_event: "Notify Chalie about upcoming calendar events",
+  },
+  messages: {
+    calendar_reminder: "Alert you in chat when a meeting is about to start",
+    auth_error:
+      "Alert you in chat if Google authentication fails and needs re-authorization",
+  },
+  context: {
+    [CONSTANTS.SCOPES.TIMEZONE]: "Convert event times to your local timezone",
+  },
+};
 
 createDaemon({
   name: "Google",
@@ -893,7 +907,7 @@ createDaemon({
   description:
     "Gmail and Google Calendar integration — search and manage emails, " +
     "create drafts, and view or edit calendar events.",
-  scopes: GOOGLE_SCOPES,
+  scopes: SCOPES,
   capabilities: ALL_CAPABILITIES,
   polls: [
     {
