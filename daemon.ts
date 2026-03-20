@@ -67,11 +67,11 @@ import { emailSyncTick, initEmailSync } from "./sync/email-sync.ts";
 import {
   loadSettings,
   saveSettings,
-  renderSettingsPanel,
 } from "./ui/settings.ts";
 import { renderMainView } from "./ui/main.ts";
 import { renderSetupWizard } from "./ui/setup.ts";
 import { ALL_CAPABILITIES } from "./capabilities.ts";
+import type { Block } from "../_sdk/blocks.ts";
 
 // ---------------------------------------------------------------------------
 // Startup initialisation
@@ -663,6 +663,20 @@ const VALID_CALENDAR_INTERVALS: ReadonlySet<number> = new Set([1, 5, 15, 30]);
 async function handleUpdateSettings(
   params: Record<string, unknown>,
 ): Promise<unknown> {
+  // Coerce string values from block form fields to expected types.
+  if (typeof params.emailSyncEnabled === "string") {
+    params.emailSyncEnabled = params.emailSyncEnabled === "true";
+  }
+  if (typeof params.calendarSyncEnabled === "string") {
+    params.calendarSyncEnabled = params.calendarSyncEnabled === "true";
+  }
+  if (typeof params.emailSyncInterval === "string") {
+    params.emailSyncInterval = parseInt(params.emailSyncInterval as string, 10);
+  }
+  if (typeof params.calendarSyncInterval === "string") {
+    params.calendarSyncInterval = parseInt(params.calendarSyncInterval as string, 10);
+  }
+
   // Validate interval values before loading and mutating settings.
   if (
     params.emailSyncInterval !== undefined &&
@@ -748,6 +762,88 @@ async function handleSetupDisconnect(
   return { ok: true };
 }
 
+/**
+ * Handle `_setup_save_credentials` — save OAuth credentials and return the auth URL.
+ * The frontend opens the auth URL in a new tab via the `openUrl` field.
+ */
+async function handleSetupSaveCredentials(
+  params: Record<string, unknown>,
+): Promise<unknown> {
+  const clientId = String(params.client_id || "").trim();
+  const clientSecret = String(params.client_secret || "").trim();
+
+  if (!clientId || !clientSecret) {
+    return { error: "Client ID and Client Secret are required." };
+  }
+
+  try {
+    const resp = await fetch("http://localhost:9004/save-credentials", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ client_id: clientId, client_secret: clientSecret }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.authUrl) {
+      return { error: data.error || "Failed to save credentials." };
+    }
+
+    // Return authUrl for the frontend to open, and pending blocks for the UI
+    const { section, header, text, container, loading } = await import("../_sdk/blocks.ts");
+    return {
+      openUrl: data.authUrl,
+      blocks: [
+        section([
+          header("Waiting for Authorization", 2),
+          text("A new tab has opened with Google's consent screen. Sign in and grant access — this page will update automatically.", "plain"),
+          container("auth-status", [
+            loading("Waiting for authorization..."),
+          ], { capability: "_setup_check_status", interval: 2000, params: {} }),
+        ]),
+      ],
+    };
+  } catch (e) {
+    return {
+      error: `Could not connect to the OAuth server: ${e instanceof Error ? e.message : String(e)}`,
+    };
+  }
+}
+
+/**
+ * Handle `_setup_check_status` — poll the OAuth callback server for auth status.
+ * Returns blocks showing either a loading state or a success message.
+ */
+async function handleSetupCheckStatus(): Promise<unknown> {
+  try {
+    const resp = await fetch("http://localhost:9004/status");
+    const data = await resp.json();
+
+    if (data && data.configured === true) {
+      const { section, header, text, alert } = await import("../_sdk/blocks.ts");
+      return {
+        stopPolling: true,
+        blocks: [
+          section([
+            header("Google Account Connected", 2),
+            alert(`Successfully connected ${data.email || "your account"} to Chalie.`, "success"),
+            text("Gmail and Calendar sync will begin within the next minute. Close this overlay and manage the connection in Settings.", "plain"),
+          ]),
+        ],
+      };
+    }
+
+    // Not yet configured — keep showing loading
+    const { loading } = await import("../_sdk/blocks.ts");
+    return {
+      blocks: [loading("Waiting for authorization...")],
+    };
+  } catch {
+    const { loading } = await import("../_sdk/blocks.ts");
+    return {
+      blocks: [loading("Waiting for authorization...")],
+    };
+  }
+}
+
 // ---------------------------------------------------------------------------
 // executeCommand
 // ---------------------------------------------------------------------------
@@ -780,9 +876,15 @@ async function executeCommand(
   params: Record<string, unknown>,
 ): Promise<unknown> {
   try {
-    // Internal command — not in ALL_CAPABILITIES, not shown to the LLM.
+    // Internal commands — not in ALL_CAPABILITIES, not shown to the LLM.
     if (capability === "_setup_disconnect") {
       return await handleSetupDisconnect(params);
+    }
+    if (capability === "_setup_save_credentials") {
+      return await handleSetupSaveCredentials(params);
+    }
+    if (capability === "_setup_check_status") {
+      return await handleSetupCheckStatus();
     }
 
     switch (capability) {
@@ -845,29 +947,32 @@ async function executeCommand(
 // ---------------------------------------------------------------------------
 
 /**
- * Render the daemon's HTML interface.
+ * Render the daemon's block-based interface.
  *
  * Routes to one of two views depending on authorization state:
  *
- * - **Not configured** → `renderSetupWizard()` — walks the user through
- *   creating a Google Cloud project and completing the OAuth consent flow.
- * - **Configured** → `renderMainView(email, settingsPanel)` — the full
- *   Gmail + Calendar dashboard with a live settings panel.
+ * - **Not configured** → `renderSetupWizard()` — setup guide + credential form
+ * - **Configured** → `renderMainView(email, settings)` — Gmail + Calendar dashboard
  *
- * @returns A complete HTML document string ready to be served by the SDK.
+ * @returns Block array rendered by Chalie's frontend.
  */
-async function renderInterface(): Promise<string> {
-  if (!isConfigured()) {
-    return renderSetupWizard();
+async function renderInterface(): Promise<Block[]> {
+  try {
+    if (!isConfigured()) {
+      return renderSetupWizard();
+    }
+
+    const [email, settings] = await Promise.all([
+      getConnectedEmail(),
+      loadSettings(),
+    ]);
+
+    return renderMainView(email, settings);
+  } catch (err) {
+    const { alert } = await import("../_sdk/blocks.ts");
+    const message = err instanceof Error ? err.message : String(err);
+    return [alert(`Failed to render Google interface: ${message}`, "error")];
   }
-
-  const [email, settings] = await Promise.all([
-    getConnectedEmail(),
-    loadSettings(),
-  ]);
-
-  const settingsHtml = renderSettingsPanel(settings, email);
-  return renderMainView(email, settingsHtml);
 }
 
 // ---------------------------------------------------------------------------

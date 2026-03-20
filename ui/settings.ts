@@ -132,286 +132,76 @@ export async function saveSettings(settings: Settings): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// UI renderer
+// UI renderer (block protocol)
 // ---------------------------------------------------------------------------
+
+import type { Block } from "../../_sdk/blocks.ts";
+import {
+  section, header, text, form, toggle, select, actions, button, divider, alert,
+} from "../../_sdk/blocks.ts";
 
 /**
- * Render an HTML fragment containing the settings form.
+ * Render the settings panel as blocks.
  *
- * The fragment is intended to be embedded inside a full HTML page produced by
- * `ui/main.ts`.  It does **not** include `<html>`, `<head>`, or `<body>` tags.
- *
- * ### Behaviour
- * - All form controls are pre-populated with the current `settings` values.
- * - "Save settings" calls `window.chalie.execute('update_settings', { ... })`
- *   with the current form values and shows a toast on success/failure.
- * - "Disconnect Account" calls `window.chalie.execute('_setup_disconnect', {})`
- *   then reloads the page so the setup wizard is displayed.
- * - A note informs the user that interval changes take effect within a minute.
- *
- * @param {Settings} settings - Current settings used to pre-populate controls.
- * @param {string | null} connectedEmail - The Google account email address, or
- *   `null` if no account is connected (renders a "Not connected" placeholder).
- * @returns {string} An HTML fragment string.
- *
- * @example
- * const settings = await loadSettings();
- * const email = await getConnectedEmail();
- * const html = renderSettingsPanel(settings, email);
+ * @param settings - Current settings used to pre-populate controls.
+ * @param connectedEmail - The Google account email, or null if not connected.
+ * @returns Block array for the settings UI.
  */
-export function renderSettingsPanel(settings: Settings, connectedEmail: string | null): string {
-  /**
-   * Build a `<select>` element for numeric interval options.
-   *
-   * @param {string} id - The element id / name attribute.
-   * @param {number[]} options - Available option values (in minutes).
-   * @param {number} current - The currently selected value.
-   * @returns {string} HTML string for the select element.
-   */
-  function intervalSelect(id: string, options: number[], current: number): string {
-    const optionTags = options
-      .map((v) => `<option value="${v}"${v === current ? " selected" : ""}>${v} min</option>`)
-      .join("");
-    return `<select id="${id}" name="${id}" class="form-select form-select-sm d-inline-block w-auto ms-2">${optionTags}</select>`;
-  }
+export function renderSettingsPanel(settings: Settings, connectedEmail: string | null): Block[] {
+  return [
+    section([
+      header("Settings", 2),
 
-  const emailIntervalSelect = intervalSelect(
-    "emailSyncInterval",
-    [5, 15, 30, 60],
-    settings.emailSyncInterval,
-  );
+      // Connected Account
+      section([
+        text(connectedEmail ? `Connected as **${connectedEmail}**` : "Not connected", "markdown"),
+        actions(
+          button("Disconnect Account", { execute: "_setup_disconnect", style: "danger" }),
+        ),
+      ], "Connected Account"),
 
-  const calendarIntervalSelect = intervalSelect(
-    "calendarSyncInterval",
-    [1, 5, 15, 30],
-    settings.calendarSyncInterval,
-  );
+      divider(),
 
-  const emailChecked = settings.emailSyncEnabled ? " checked" : "";
-  const calendarChecked = settings.calendarSyncEnabled ? " checked" : "";
+      // Email Sync
+      form("settings-form", [
+        section([
+          toggle("emailSyncEnabled", "Enable email notifications", settings.emailSyncEnabled),
+          select(
+            "emailSyncInterval",
+            [
+              { label: "5 min", value: "5" },
+              { label: "15 min", value: "15" },
+              { label: "30 min", value: "30" },
+              { label: "60 min", value: "60" },
+            ],
+            String(settings.emailSyncInterval),
+          ),
+        ], "Email Sync"),
 
-  const accountDisplay = connectedEmail
-    ? `<span class="text-success fw-semibold">${escapeHtml(connectedEmail)}</span>`
-    : `<span class="text-muted fst-italic">Not connected</span>`;
+        divider(),
 
-  return `
-<div id="settings-panel" class="card shadow-sm mb-4">
-  <div class="card-header d-flex align-items-center gap-2">
-    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
-         class="bi bi-gear-fill" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987
-               1.987l.169.311c.446.82.023 1.841-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1
-               .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413
-               1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705
-               1.987-1.987l-.169-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413 1.4-2.397
-               0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464
-               1.464 0 0 1-2.105-.872zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.858z"/>
-    </svg>
-    <strong>Settings</strong>
-  </div>
+        // Calendar Sync
+        section([
+          toggle("calendarSyncEnabled", "Enable calendar reminders", settings.calendarSyncEnabled),
+          select(
+            "calendarSyncInterval",
+            [
+              { label: "1 min", value: "1" },
+              { label: "5 min", value: "5" },
+              { label: "15 min", value: "15" },
+              { label: "30 min", value: "30" },
+            ],
+            String(settings.calendarSyncInterval),
+          ),
+        ], "Calendar Sync"),
 
-  <div class="card-body">
+        divider(),
 
-    <!-- Connected Account -->
-    <section class="mb-4">
-      <h6 class="text-uppercase text-muted small fw-semibold mb-2">Connected Account</h6>
-      <div class="d-flex align-items-center gap-3 flex-wrap">
-        <div>${accountDisplay}</div>
-        <button
-          type="button"
-          class="btn btn-sm btn-outline-danger"
-          id="disconnect-btn"
-          onclick="handleDisconnect()"
-          ${connectedEmail ? "" : "disabled"}>
-          Disconnect Account
-        </button>
-      </div>
-    </section>
-
-    <hr class="my-3" />
-
-    <!-- Email Sync -->
-    <section class="mb-4">
-      <h6 class="text-uppercase text-muted small fw-semibold mb-3">Email Sync</h6>
-
-      <div class="form-check form-switch mb-2">
-        <input
-          class="form-check-input"
-          type="checkbox"
-          role="switch"
-          id="emailSyncEnabled"
-          name="emailSyncEnabled"
-          ${emailChecked} />
-        <label class="form-check-label" for="emailSyncEnabled">
-          Enable email notifications
-        </label>
-      </div>
-
-      <div class="mt-2">
-        <label class="form-label mb-0">
-          Check for new emails every
-          ${emailIntervalSelect}
-        </label>
-      </div>
-    </section>
-
-    <hr class="my-3" />
-
-    <!-- Calendar Sync -->
-    <section class="mb-4">
-      <h6 class="text-uppercase text-muted small fw-semibold mb-3">Calendar Sync</h6>
-
-      <div class="form-check form-switch mb-2">
-        <input
-          class="form-check-input"
-          type="checkbox"
-          role="switch"
-          id="calendarSyncEnabled"
-          name="calendarSyncEnabled"
-          ${calendarChecked} />
-        <label class="form-check-label" for="calendarSyncEnabled">
-          Enable calendar reminders
-        </label>
-      </div>
-
-      <div class="mt-2">
-        <label class="form-label mb-0">
-          Check for upcoming events every
-          ${calendarIntervalSelect}
-        </label>
-      </div>
-    </section>
-
-    <hr class="my-3" />
-
-    <!-- Save button + note -->
-    <div class="d-flex align-items-center gap-3 flex-wrap">
-      <button type="button" class="btn btn-primary" id="save-settings-btn" onclick="saveSettings()">
-        Save Settings
-      </button>
-      <span class="text-muted small">
-        &#8505;&#xFE0F; Changes take effect within a minute.
-      </span>
-    </div>
-
-    <!-- Toast notification -->
-    <div id="settings-toast" class="mt-3" style="display:none;">
-      <div id="settings-toast-inner" class="alert mb-0" role="alert"></div>
-    </div>
-
-  </div><!-- /.card-body -->
-</div><!-- /#settings-panel -->
-
-<script>
-(function () {
-  /**
-   * Collect the current form values from the settings panel controls.
-   *
-   * @returns {{ emailSyncEnabled: boolean, emailSyncInterval: number,
-   *             calendarSyncEnabled: boolean, calendarSyncInterval: number }}
-   */
-  function collectFormValues() {
-    return {
-      emailSyncEnabled: document.getElementById("emailSyncEnabled").checked,
-      emailSyncInterval: parseInt(
-        document.getElementById("emailSyncInterval").value,
-        10
-      ),
-      calendarSyncEnabled: document.getElementById("calendarSyncEnabled").checked,
-      calendarSyncInterval: parseInt(
-        document.getElementById("calendarSyncInterval").value,
-        10
-      ),
-    };
-  }
-
-  /**
-   * Show a dismissible toast message inside the settings panel.
-   *
-   * @param {string} message - The text to display.
-   * @param {"success"|"danger"|"warning"} type - Bootstrap alert variant.
-   */
-  function showToast(message, type) {
-    var toast = document.getElementById("settings-toast");
-    var inner = document.getElementById("settings-toast-inner");
-    inner.textContent = message;
-    inner.className = "alert alert-" + type + " mb-0";
-    toast.style.display = "block";
-    setTimeout(function () {
-      toast.style.display = "none";
-    }, 4000);
-  }
-
-  /**
-   * Save the current settings form values via the Chalie execute bridge.
-   * Shows a success toast on resolution or an error toast on rejection.
-   *
-   * Attached to the global scope so the onclick handler can reach it.
-   */
-  window.saveSettings = async function saveSettings() {
-    var btn = document.getElementById("save-settings-btn");
-    btn.disabled = true;
-    btn.textContent = "Saving…";
-    try {
-      await window.chalie.execute("update_settings", collectFormValues());
-      showToast("Settings saved.", "success");
-    } catch (err) {
-      showToast(
-        "Couldn\u2019t save settings: " + (err && err.message ? err.message : String(err)),
-        "danger"
-      );
-    } finally {
-      btn.disabled = false;
-      btn.textContent = "Save Settings";
-    }
-  };
-
-  /**
-   * Disconnect the current Google account by calling the internal disconnect
-   * capability, then reload the page so the setup wizard is shown.
-   *
-   * Attached to the global scope so the onclick handler can reach it.
-   */
-  window.handleDisconnect = async function handleDisconnect() {
-    if (!confirm("Disconnect your Google account? Sync will stop until you reconnect.")) return;
-    var btn = document.getElementById("disconnect-btn");
-    btn.disabled = true;
-    btn.textContent = "Disconnecting…";
-    try {
-      await window.chalie.execute("_setup_disconnect", {});
-      window.location.reload();
-    } catch (err) {
-      btn.disabled = false;
-      btn.textContent = "Disconnect Account";
-      showToast(
-        "Couldn\u2019t disconnect: " + (err && err.message ? err.message : String(err)),
-        "danger"
-      );
-    }
-  };
-})();
-</script>
-`;
-}
-
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Escape special HTML characters in a string so it is safe for insertion into
- * HTML attribute values and text content.
- *
- * Characters escaped: `&`, `<`, `>`, `"`, `'`.
- *
- * @param {string} str - Raw string to escape.
- * @returns {string} HTML-safe string.
- */
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#x27;");
+        actions(
+          button("Save Settings", { execute: "update_settings", collect: "settings-form" }),
+        ),
+        alert("Changes take effect within a minute.", "info"),
+      ]),
+    ]),
+  ];
 }
