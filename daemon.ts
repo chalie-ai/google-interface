@@ -35,7 +35,7 @@ import {
   getContext,
   minutes,
   CONSTANTS,
-} from "chalie:sdk";
+} from "../_sdk/mod.ts";
 
 import { getDataDir } from "./lib/data-dir.ts";
 import { AuthError, RateLimitError } from "./google/api-utils.ts";
